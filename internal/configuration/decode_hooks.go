@@ -513,6 +513,13 @@ func StringToPasswordDigestHookFunc(plaintext bool) mapstructure.DecodeHookFuncT
 
 		var result *schema.PasswordDigest
 
+		if strings.HasPrefix(dataStr, "$file$") {
+			path := strings.TrimPrefix(dataStr, "$file$")
+			if dataStr, err = loadSecret(path); err != nil {
+				return nil, fmt.Errorf(errFmtSecretIOIssue, path, expectedType.String(), err);
+			}
+		}
+
 		if !strings.HasPrefix(dataStr, "$") {
 			dataStr = fmt.Sprintf(crypt.StorageFormatSimple, crypt.AlgorithmPrefixPlainText, dataStr)
 		}
