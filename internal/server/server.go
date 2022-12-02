@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/jimlambrt/gldap"
 	"github.com/sirupsen/logrus"
 	"github.com/valyala/fasthttp"
 
@@ -112,4 +113,26 @@ func CreateMetricsServer(config schema.TelemetryMetricsConfig) (server *fasthttp
 	logging.Logger().Infof(fmtLogServerInit, "server (metrics)", connNonTLS, listener.Addr().String(), "/metrics")
 
 	return server, listener, nil
+}
+
+// CreateLDAPServer creates an LDAP server.
+func CreateLDAPServer(providers middlewares.Providers) (server *gldap.Server, addr string, err error) {
+	if server, err = gldap.NewServer(); err != nil {
+		return nil, "", err
+	}
+
+	router, err := gldap.NewMux()
+	if err != nil {
+		return nil, "", fmt.Errorf("unable to initialize ldap router: %w", err)
+	}
+
+	router.Bind(handleLDAPBind(providers))
+	router.Unbind(handleLDAPUnbind(providers))
+	router.Search(handleLDAPSearch(providers))
+	server.Router(router)
+
+	addr = "127.0.0.1:3389"
+	logging.Logger().Infof("Initializing %s for %s on '%s'", "server ldap", connNonTLS, addr)
+
+	return server, addr, nil
 }

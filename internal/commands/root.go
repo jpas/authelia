@@ -11,6 +11,7 @@ import (
 	"syscall"
 
 	"github.com/fsnotify/fsnotify"
+	"github.com/jimlambrt/gldap"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/valyala/fasthttp"
@@ -108,6 +109,7 @@ func runServices(config *schema.Configuration, providers middlewares.Providers, 
 	var (
 		mainServer, metricsServer     *fasthttp.Server
 		mainListener, metricsListener net.Listener
+		ldapServer                    *gldap.Server
 	)
 
 	g.Go(func() (err error) {
@@ -154,6 +156,27 @@ func runServices(config *schema.Configuration, providers middlewares.Providers, 
 		return nil
 	})
 
+	g.Go(func() (err error) {
+		defer func() {
+			if r := recover(); r != nil {
+				log.WithError(recoverErr(r)).Errorf("Critical error in ldap server caught (recovered)")
+			}
+		}()
+
+		var addr string
+		if ldapServer, addr, err = server.CreateLDAPServer(providers); err != nil {
+			return err
+		}
+
+		if err = ldapServer.Run(addr); err != nil {
+			log.WithError(err).Error("Server (ldap) returned error")
+
+			return err
+		}
+
+		return nil
+	})
+
 	if config.AuthenticationBackend.File != nil && config.AuthenticationBackend.File.Watch {
 		provider := providers.UserProvider.(*authentication.FileUserProvider)
 		if watcher, err := runServiceFileWatcher(g, log, config.AuthenticationBackend.File.Path, provider); err != nil {
@@ -190,6 +213,12 @@ func runServices(config *schema.Configuration, providers middlewares.Providers, 
 	if metricsServer != nil {
 		if err = metricsServer.Shutdown(); err != nil {
 			log.WithError(err).Errorf("Error occurred shutting down the metrics server")
+		}
+	}
+
+	if ldapServer != nil {
+		if err = ldapServer.Stop(); err != nil {
+			log.WithError(err).Errorf("Error occurred shutting down the ldap server")
 		}
 	}
 
